@@ -11,10 +11,18 @@ from matplotlib.colors import ListedColormap
 from typing import List, Tuple
 
 
-def find_correspondences(image_path1: str, image_path2: str, num_pairs: int = 10, load_size: int = 224, layer: int = 9,
-                         facet: str = 'key', bin: bool = True, thresh: float = 0.05, model_type: str = 'dino_vits8',
-                         stride: int = 4) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]],
-                                                                              Image.Image, Image.Image]:
+def find_correspondences(
+    image_path1: str,
+    image_path2: str,
+    num_pairs: int = 10,
+    load_size: int = 224,
+    layer: int = 9,
+    facet: str = 'key',
+    bin: bool = True,
+    thresh: float = 0.05,
+    model_type: str = 'dino_vits8',
+    stride: int = 4,
+) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]], Image.Image, Image.Image]:
     """
     finding point correspondences between two images.
     :param image_path1: path to the first image.
@@ -35,10 +43,12 @@ def find_correspondences(image_path1: str, image_path2: str, num_pairs: int = 10
     extractor = ViTExtractor(model_type, stride, device=device)
     image1_batch, image1_pil = extractor.preprocess(image_path1, load_size)
     descriptors1 = extractor.extract_descriptors(image1_batch.to(device), layer, facet, bin)
-    num_patches1, load_size1 = extractor.num_patches, extractor.load_size
+    # num_patches1, load_size1 = extractor.num_patches, extractor.load_size
+    num_patches1, _ = extractor.num_patches, extractor.load_size
     image2_batch, image2_pil = extractor.preprocess(image_path2, load_size)
     descriptors2 = extractor.extract_descriptors(image2_batch.to(device), layer, facet, bin)
-    num_patches2, load_size2 = extractor.num_patches, extractor.load_size
+    # num_patches2, load_size2 = extractor.num_patches, extractor.load_size
+    num_patches2, _ = extractor.num_patches, extractor.load_size
 
     # extracting saliency maps for each image
     saliency_map1 = extractor.extract_saliency_maps(image1_batch.to(device))[0]
@@ -110,8 +120,12 @@ def find_correspondences(image_path1: str, image_path2: str, num_pairs: int = 10
     return points1, points2, image1_pil, image2_pil
 
 
-def draw_correspondences(points1: List[Tuple[float, float]], points2: List[Tuple[float, float]],
-                         image1: Image.Image, image2: Image.Image) -> Tuple[plt.Figure, plt.Figure]:
+def draw_correspondences(
+    points1: List[Tuple[float, float]],
+    points2: List[Tuple[float, float]],
+    image1: Image.Image,
+    image2: Image.Image,
+) -> Tuple[plt.Figure, plt.Figure]:
     """
     draw point correspondences on images.
     :param points1: a list of (y, x) coordinates of image1, corresponding to points2.
@@ -165,8 +179,8 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return torch.stack(result_list, dim=2)  # Bx1x(t_x)x(t_y)
 
 
-""" taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
-def str2bool(v):
+def str2bool(v: str) -> bool:
+    """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -182,13 +196,13 @@ if __name__ == "__main__":
     parser.add_argument('--root_dir', type=str, required=True, help='The root dir of image pairs.')
     parser.add_argument('--save_dir', type=str, required=True, help='The root save dir for image pairs results.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer.
                                                                  small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dino_vits8', type=str,
-                        help="""type of model to extract. 
-                           Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        help="""type of model to extract.
+                           Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
                            vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
-    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
+    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from.
                                                                     options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=9, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='True', type=str2bool, help="create a binned descriptor if True.")

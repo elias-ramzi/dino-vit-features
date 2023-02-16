@@ -1,8 +1,13 @@
+from typing import Union
 import argparse
-import torch
-from extractor import ViTExtractor
+
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
+
+from extractor import ViTExtractor
+
+NoneType = type(None)
 
 
 def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -23,7 +28,7 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size: int = 224, layer: int = 11,
                                 facet: str = 'key', bin: bool = False, stride: int = 4, model_type: str = 'dino_vits8',
-                                num_sim_patches: int = 1):
+                                num_sim_patches: int = 1) -> NoneType:
     """
      finding similarity between a descriptor in one image to the all descriptors in the other image.
      :param image_path_a: path to first image.
@@ -45,7 +50,8 @@ def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size:
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
     descs_b = extractor.extract_descriptors(image_batch_b.to(device), layer, facet, bin, include_cls=True)
-    num_patches_b, load_size_b = extractor.num_patches, extractor.load_size
+    # num_patches_b, load_size_b = extractor.num_patches, extractor.load_size
+    num_patches_b, _ = extractor.num_patches, extractor.load_size
 
     # plot
     fig, axes = plt.subplots(1, 3)
@@ -121,8 +127,8 @@ def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size:
         pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
 
 
-""" taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
-def str2bool(v):
+def str2bool(v: Union[bool, str]) -> bool:
+    """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -138,13 +144,13 @@ if __name__ == "__main__":
     parser.add_argument('--image_a', type=str, required=True, help='Path to the first image')
     parser.add_argument('--image_b', type=str, required=True, help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer.
                                                                     small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dino_vits8', type=str,
-                        help="""type of model to extract. 
-                              Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        help="""type of model to extract.
+                              Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
-    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
+    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from.
                                                                        options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")

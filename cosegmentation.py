@@ -1,15 +1,18 @@
+from typing import List, Tuple, Union
 import argparse
-import torch
 from pathlib import Path
-from torchvision import transforms
-from extractor import ViTExtractor
-from tqdm import tqdm
+
 import numpy as np
-import faiss
-from PIL import Image
-import matplotlib.pyplot as plt
+import torch
+from torch import Tensor
+import torchvision.transforms as transforms
 import cv2
-from typing import List, Tuple
+import faiss
+import matplotlib.pyplot as plt
+from PIL import Image
+from tqdm import tqdm
+
+from extractor import ViTExtractor
 
 
 def find_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_size: int = 224, layer: int = 11,
@@ -75,7 +78,8 @@ def find_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_size:
             image_batch, _ = saliency_extractor.preprocess(image_path, low_res_load_size)
 
         saliency_map = saliency_extractor.extract_saliency_maps(image_batch.to(device)).cpu().numpy()
-        curr_sal_num_patches, curr_sal_load_size = saliency_extractor.num_patches, saliency_extractor.load_size
+        # curr_sal_num_patches, curr_sal_load_size = saliency_extractor.num_patches, saliency_extractor.load_size
+        curr_sal_num_patches, _ = saliency_extractor.num_patches, saliency_extractor.load_size
         if low_res_saliency_maps:
             reshape_op = transforms.Resize(curr_num_patches, transforms.InterpolationMode.NEAREST)
             saliency_map = np.array(reshape_op(Image.fromarray(saliency_map.reshape(curr_sal_num_patches)))).flatten()
@@ -104,8 +108,9 @@ def find_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_size:
         inlier_image_pil, outlier_image_pil = [], []
         inlier_num_patches, outlier_num_patches = [], []
         inlier_load_size, outlier_load_size = [], []
-        for idx, (image_path, descriptor, saliency_map, pil_image, num_patches, load_size) in enumerate(zip(image_paths,
-                descriptors_list, saliency_maps_list, image_pil_list, num_patches_list, load_size_list)):
+        for idx, (image_path, descriptor, saliency_map, pil_image, num_patches, load_size) in enumerate(zip(
+            image_paths, descriptors_list, saliency_maps_list, image_pil_list, num_patches_list, load_size_list
+        )):
             (inlier_image_paths if idx in inliers_idx else outlier_image_paths).append(image_path)
             (inlier_descriptors if idx in inliers_idx else outlier_descriptors).append(descriptor)
             (inlier_saliency_maps if idx in inliers_idx else outlier_saliency_maps).append(saliency_map)
@@ -141,7 +146,7 @@ def find_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_size:
             break
 
     num_labels = np.max(n_clusters) + 1
-    num_descriptors_per_image = [num_patches[0]*num_patches[1] for num_patches in num_patches_list]
+    num_descriptors_per_image = [num_patches[0] * num_patches[1] for num_patches in num_patches_list]
     labels_per_image = np.split(labels, np.cumsum(num_descriptors_per_image))
 
     if save_dir is not None:
@@ -149,7 +154,7 @@ def find_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_size:
         for image_path, num_patches, label_per_image in zip(image_paths, num_patches_list, labels_per_image):
             fig, ax = plt.subplots()
             ax.axis('off')
-            ax.imshow(label_per_image.reshape(num_patches), vmin=0, vmax=num_labels-1, cmap=cmap)
+            ax.imshow(label_per_image.reshape(num_patches), vmin=0, vmax=num_labels - 1, cmap=cmap)
             fig.savefig(save_dir / f'{Path(image_path).stem}_clustering.png', bbox_inches='tight', pad_inches=0)
             plt.close(fig)
 
@@ -242,7 +247,7 @@ def draw_cosegmentation(segmentation_masks: List[Image.Image], pil_images: List[
     return figures
 
 
-def draw_cosegmentation_binary_masks(segmentation_masks) -> List[plt.Figure]:
+def draw_cosegmentation_binary_masks(segmentation_masks: List[Tensor]) -> List[plt.Figure]:
     """
     Visualize cosegmentation results as binary masks
     :param segmentation_masks: list of binary segmentation masks
@@ -257,8 +262,8 @@ def draw_cosegmentation_binary_masks(segmentation_masks) -> List[plt.Figure]:
     return figures
 
 
-""" taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
-def str2bool(v):
+def str2bool(v: Union[str, bool]) -> bool:
+    """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -276,13 +281,13 @@ if __name__ == "__main__":
     parser.add_argument('--load_size', default=None, type=int, help='load size of the input images. If None maintains'
                                                                     'original image size, if int resizes each image'
                                                                     'such that the smaller side is this number.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer.
                                                                  small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dino_vits8', type=str,
-                        help="""type of model to extract. 
-                           Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        help="""type of model to extract.
+                           Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
                            vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
-    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
+    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from.
                                                                     options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")

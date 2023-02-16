@@ -1,18 +1,19 @@
+from typing import List, Tuple, Union
 import argparse
-import torch
 from pathlib import Path
 
-import torchvision.transforms
-from torchvision import transforms
-from extractor import ViTExtractor
-from tqdm import tqdm
 import numpy as np
+import torch
+import torchvision.transforms
+import torchvision.transforms as transforms
 import faiss
-from PIL import Image
 import matplotlib.pyplot as plt
-from typing import List, Tuple
-import pydensecrf.densecrf as dcrf
 from matplotlib.colors import ListedColormap
+from tqdm import tqdm
+from PIL import Image
+import pydensecrf.densecrf as dcrf
+
+from extractor import ViTExtractor
 
 
 def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_size: int = 224, layer: int = 11,
@@ -97,7 +98,8 @@ def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_
             image_batch, _ = saliency_extractor.preprocess(image_path, low_res_load_size)
 
         saliency_map = saliency_extractor.extract_saliency_maps(image_batch.to(device)).cpu().numpy()
-        curr_sal_num_patches, curr_sal_load_size = saliency_extractor.num_patches, saliency_extractor.load_size
+        # curr_sal_num_patches, curr_sal_load_size = saliency_extractor.num_patches, saliency_extractor.load_size
+        curr_sal_num_patches, _ = saliency_extractor.num_patches, saliency_extractor.load_size
         if low_res_saliency_maps:
             reshape_op = transforms.Resize(curr_num_patches, transforms.InterpolationMode.NEAREST)
             saliency_map = np.array(reshape_op(Image.fromarray(saliency_map.reshape(curr_sal_num_patches)))).flatten()
@@ -135,7 +137,7 @@ def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_
             break
 
     num_labels = np.max(n_clusters) + 1
-    num_descriptors_per_image = [num_patches[0]*num_patches[1] for num_patches in num_patches_list]
+    num_descriptors_per_image = [num_patches[0] * num_patches[1] for num_patches in num_patches_list]
     labels_per_image = np.split(labels, np.cumsum(num_descriptors_per_image)[:-1])
 
     if save_dir is not None:
@@ -144,7 +146,7 @@ def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_
             if not ('_aug_' in Path(image_path).stem):
                 fig, ax = plt.subplots()
                 ax.axis('off')
-                ax.imshow(label_per_image.reshape(num_patches), vmin=0, vmax=num_labels-1, cmap=cmap)
+                ax.imshow(label_per_image.reshape(num_patches), vmin=0, vmax=num_labels - 1, cmap=cmap)
                 fig.savefig(save_dir / f'{Path(image_path).stem}_clustering.png', bbox_inches='tight', pad_inches=0)
                 plt.close(fig)
 
@@ -184,12 +186,14 @@ def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_
 
     part_num_labels = np.max(part_labels) + 1
     parts_num_descriptors_per_image = [np.count_nonzero(mask) for mask in fg_masks]
-    part_labels_per_image = np.split(part_labels, np.cumsum(parts_num_descriptors_per_image))
+    # part_labels_per_image = np.split(part_labels, np.cumsum(parts_num_descriptors_per_image))
+    _ = np.split(part_labels, np.cumsum(parts_num_descriptors_per_image))
 
     # get smoothed parts using crf
     part_segmentations = []
     for img, num_patches, load_size, descs in zip(image_pil_list, num_patches_list, load_size_list, descriptors_list):
-        bg_centroids = tuple(i for i in range(algorithm.centroids.shape[0]) if not i in salient_labels)
+        # bg_centroids = tuple(i for i in range(algorithm.centroids.shape[0]) if not i in salient_labels)
+        bg_centroids = tuple(i for i in range(algorithm.centroids.shape[0]) if i not in salient_labels)
         curr_normalized_descs = descs[0, 0].astype(np.float32)
         faiss.normalize_L2(curr_normalized_descs)  # in-place operation
         # distance to parts
@@ -272,15 +276,19 @@ def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_
         common_part_algorithm.train(normalized_all_common_sampled_descriptors.astype(np.float32))
         _, common_part_labels = common_part_algorithm.index.search(normalized_all_common_descriptors.astype(np.float32), 1)
 
-        common_part_num_labels = np.max(common_part_labels) + 1
+        # common_part_num_labels = np.max(common_part_labels) + 1
+        _ = np.max(common_part_labels) + 1
         parts_num_descriptors_per_image = [np.count_nonzero(mask) for mask in common_parts_masks]
-        common_part_labels_per_image = np.split(common_part_labels, np.cumsum(parts_num_descriptors_per_image))
+        # common_part_labels_per_image = np.split(common_part_labels, np.cumsum(parts_num_descriptors_per_image))
+        _ = np.split(common_part_labels, np.cumsum(parts_num_descriptors_per_image))
 
         # get smoothed parts using crf
         common_part_segmentations = []
         for img, num_patches, load_size, descs in zip(image_pil_list, num_patches_list, load_size_list, descriptors_list):
-            bg_centroids_1 = tuple(i for i in range(algorithm.centroids.shape[0]) if not i in salient_labels)
-            bg_centroids_2 = tuple(i for i in range(part_algorithm.centroids.shape[0]) if not i in common_labels)
+            # bg_centroids_1 = tuple(i for i in range(algorithm.centroids.shape[0]) if not i in salient_labels)
+            # bg_centroids_2 = tuple(i for i in range(part_algorithm.centroids.shape[0]) if not i in common_labels)
+            bg_centroids_1 = tuple(i for i in range(algorithm.centroids.shape[0]) if i not in salient_labels)
+            bg_centroids_2 = tuple(i for i in range(part_algorithm.centroids.shape[0]) if i not in common_labels)
             curr_normalized_descs = descs[0, 0].astype(np.float32)
             faiss.normalize_L2(curr_normalized_descs)  # in-place operation
 
@@ -288,10 +296,8 @@ def find_part_cosegmentation(image_paths: List[str], elbow: float = 0.975, load_
             dist_to_parts = ((curr_normalized_descs[:, None, :] - common_part_algorithm.centroids[None, ...]) ** 2).sum(
                 axis=2)
             # dist to BG
-            dist_to_bg_1 = ((curr_normalized_descs[:, None, :] -
-                             algorithm.centroids[None, bg_centroids_1, :]) ** 2).sum(axis=2)
-            dist_to_bg_2 = ((curr_normalized_descs[:, None, :] -
-                             part_algorithm.centroids[None, bg_centroids_2, :]) ** 2).sum(axis=2)
+            dist_to_bg_1 = ((curr_normalized_descs[:, None, :] - algorithm.centroids[None, bg_centroids_1, :]) ** 2).sum(axis=2)
+            dist_to_bg_2 = ((curr_normalized_descs[:, None, :] - part_algorithm.centroids[None, bg_centroids_2, :]) ** 2).sum(axis=2)
             dist_to_bg = np.concatenate((dist_to_bg_1, dist_to_bg_2), axis=1)
             min_dist_to_bg = np.min(dist_to_bg, axis=1)[:, None]
             d_to_cent = np.concatenate((dist_to_parts, min_dist_to_bg), axis=1).reshape(num_patches[0], num_patches[1],
@@ -366,8 +372,8 @@ def draw_part_cosegmentation(num_parts: int, segmentation_parts: List[np.ndarray
     return figures
 
 
-""" taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
-def str2bool(v):
+def str2bool(v: Union[bool, str]) -> str:
+    """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -385,13 +391,13 @@ if __name__ == "__main__":
     parser.add_argument('--load_size', default=None, type=int, help='load size of the input images. If None maintains'
                                                                     'original image size, if int resizes each image'
                                                                     'such that the smaller side is this number.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer.
                                                                  small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dino_vits8', type=str,
-                        help="""type of model to extract. 
-                           Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        help="""type of model to extract.
+                           Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
                            vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
-    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
+    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from.
                                                                     options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")

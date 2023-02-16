@@ -1,19 +1,21 @@
+from typing import List, Tuple, Union
 import argparse
-import PIL.Image
-import numpy
+
+import numpy as np
 import torch
+import PIL.Image
 from pathlib import Path
 from extractor import ViTExtractor
 from tqdm import tqdm
-import numpy as np
 from PIL import Image
 from sklearn.decomposition import PCA
-from typing import List, Tuple
+
+NoneType = type(None)
 
 
-def pca(image_paths, load_size: int = 224, layer: int = 11, facet: str = 'key', bin: bool = False, stride: int = 4,
+def pca(image_paths: List[str], load_size: int = 224, layer: int = 11, facet: str = 'key', bin: bool = False, stride: int = 4,
         model_type: str = 'dino_vits8', n_components: int = 4,
-        all_together: bool = True) -> List[Tuple[Image.Image, numpy.ndarray]]:
+        all_together: bool = True) -> List[Tuple[Image.Image, np.ndarray]]:
     """
     finding pca of a set of images.
     :param image_paths: a list of paths of all the images.
@@ -61,8 +63,8 @@ def pca(image_paths, load_size: int = 224, layer: int = 11, facet: str = 'key', 
     return results
 
 
-def plot_pca(pil_image: Image.Image, pca_image: numpy.ndarray, save_dir: str, last_components_rgb: bool = True,
-             save_resized=True, save_prefix: str = ''):
+def plot_pca(pil_image: Image.Image, pca_image: np.ndarray, save_dir: str, last_components_rgb: bool = True,
+             save_resized: bool = True, save_prefix: str = '') -> NoneType:
     """
     finding pca of a set of images.
     :param pil_image: The original PIL image.
@@ -103,8 +105,8 @@ def plot_pca(pil_image: Image.Image, pca_image: numpy.ndarray, save_dir: str, la
         pca_pil.save(comp_file_path)
 
 
-""" taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
-def str2bool(v):
+def str2bool(v: Union[bool, str]) -> bool:
+    """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -120,13 +122,13 @@ if __name__ == "__main__":
     parser.add_argument('--root_dir', type=str, required=True, help='The root dir of images.')
     parser.add_argument('--save_dir', type=str, required=True, help='The root save dir for results.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer.
                                                                     small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dino_vits8', type=str,
-                        help="""type of model to extract. 
-                              Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        help="""type of model to extract.
+                              Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
-    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
+    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from.
                                                                        options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
@@ -152,4 +154,3 @@ if __name__ == "__main__":
         for image_path, (pil_image, pca_image) in tqdm(zip(images_paths, pca_per_image)):
             save_prefix = image_path.stem
             plot_pca(pil_image, pca_image, str(save_dir), args.last_components_rgb, args.save_resized, save_prefix)
-

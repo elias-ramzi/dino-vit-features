@@ -1,6 +1,9 @@
+from typing import Callable
 import argparse
+from functools import partial
+
 import torch
-import torchvision.transforms
+from torch import Tensor
 from torch import nn
 from torchvision import transforms
 import torch.nn.modules.utils as nn_utils
@@ -10,6 +13,8 @@ import types
 from pathlib import Path
 from typing import Union, List, Tuple
 from PIL import Image
+
+NoneType = type(None)
 
 
 class ViTExtractor:
@@ -24,7 +29,7 @@ class ViTExtractor:
     d - the embedding dimension in the ViT.
     """
 
-    def __init__(self, model_type: str = 'dino_vits8', stride: int = 4, model: nn.Module = None, device: str = 'cuda'):
+    def __init__(self, model_type: str = 'dino_vits8', stride: int = 4, model: nn.Module = None, device: str = 'cuda') -> NoneType:
         """
         :param model_type: A string specifying the type of model to extract from.
                           [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
@@ -63,7 +68,15 @@ class ViTExtractor:
         :return: the model
         """
         if 'dino' in model_type:
-            model = torch.hub.load('facebookresearch/dino:main', model_type)
+            if model_type == 'dino_vits8':
+                from vision_transformer import VisionTransformer
+                model = VisionTransformer(
+                    patch_size=8, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
+                    qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), drop_path_rate=0.1)
+                state = torch.hub.load_state_dict_from_url('https://dl.fbaipublicfiles.com/dino/dino_deitsmall8_pretrain/dino_deitsmall8_pretrain.pth')
+                model.load_state_dict(state)
+            else:
+                model = torch.hub.load('facebookresearch/dino:main', model_type)
         else:  # model from timm -- load weights from timm to dino model (enables working on arbitrary size images).
             temp_model = timm.create_model(model_type, pretrained=True)
             model_type_dict = {
@@ -72,7 +85,11 @@ class ViTExtractor:
                 'vit_base_patch16_224': 'dino_vitb16',
                 'vit_base_patch8_224': 'dino_vitb8'
             }
-            model = torch.hub.load('facebookresearch/dino:main', model_type_dict[model_type])
+            model_type = model_type_dict[model_type]
+            if model_type == 'dino_vits8':
+                model = torch.hub.load('facebookresearch/dino:main', 'dino_deits8')
+            else:
+                model = torch.hub.load('facebookresearch/dino:main', model_type)
             temp_state_dict = temp_model.state_dict()
             del temp_state_dict['head.weight']
             del temp_state_dict['head.bias']
@@ -80,14 +97,14 @@ class ViTExtractor:
         return model
 
     @staticmethod
-    def _fix_pos_enc(patch_size: int, stride_hw: Tuple[int, int]):
+    def _fix_pos_enc(patch_size: int, stride_hw: Tuple[int, int]) -> Callable:
         """
         Creates a method for position encoding interpolation.
         :param patch_size: patch size of the model.
         :param stride_hw: A tuple containing the new height and width stride respectively.
         :return: the interpolation method
         """
-        def interpolate_pos_encoding(self, x: torch.Tensor, w: int, h: int) -> torch.Tensor:
+        def interpolate_pos_encoding(self: nn.Module, x: torch.Tensor, w: int, h: int) -> torch.Tensor:
             npatch = x.shape[1] - 1
             N = self.pos_embed.shape[1] - 1
             if npatch == N and w == h:
@@ -98,7 +115,7 @@ class ViTExtractor:
             # compute number of tokens taking stride into account
             w0 = 1 + (w - patch_size) // stride_hw[1]
             h0 = 1 + (h - patch_size) // stride_hw[0]
-            assert (w0 * h0 == npatch), f"""got wrong grid size for {h}x{w} with patch_size {patch_size} and 
+            assert (w0 * h0 == npatch), f"""got wrong grid size for {h}x{w} with patch_size {patch_size} and
                                             stride {stride_hw} got {h0}x{w0}={h0 * w0} expecting {npatch}"""
             # we add a small number to avoid floating point error in the interpolation
             # see discussion at https://github.com/facebookresearch/dino/issues/8
@@ -157,12 +174,12 @@ class ViTExtractor:
         prep_img = prep(pil_image)[None, ...]
         return prep_img, pil_image
 
-    def _get_hook(self, facet: str):
+    def _get_hook(self, facet: str) -> Callable:
         """
         generate a hook method for a specific block and facet.
         """
         if facet in ['attn', 'token']:
-            def _hook(model, input, output):
+            def _hook(model: nn.Module, input: Tensor, output: Tensor) -> NoneType:
                 self._feats.append(output)
             return _hook
 
@@ -175,11 +192,11 @@ class ViTExtractor:
         else:
             raise TypeError(f"{facet} is not a supported facet.")
 
-        def _inner_hook(module, input, output):
+        def _inner_hook(module: nn.Module, input: Tensor, output: Tensor) -> NoneType:
             input = input[0]
             B, N, C = input.shape
             qkv = module.qkv(input).reshape(B, N, 3, module.num_heads, C // module.num_heads).permute(2, 0, 3, 1, 4)
-            self._feats.append(qkv[facet_idx]) #Bxhxtxd
+            self._feats.append(qkv[facet_idx])  # Bxhxtxd
         return _inner_hook
 
     def _register_hooks(self, layers: List[int], facet: str) -> None:
@@ -262,14 +279,11 @@ class ViTExtractor:
                             if i == y and j == x and k != 0:
                                 continue
                             if 0 <= i < self.num_patches[0] and 0 <= j < self.num_patches[1]:
-                                bin_x[:, part_idx * sub_desc_dim: (part_idx + 1) * sub_desc_dim, y, x] = avg_pools[k][
-                                                                                                           :, :, i, j]
+                                bin_x[:, part_idx * sub_desc_dim: (part_idx + 1) * sub_desc_dim, y, x] = avg_pools[k][:, :, i, j]
                             else:  # handle padding in a more delicate way than zero padding
                                 temp_i = max(0, min(i, self.num_patches[0] - 1))
                                 temp_j = max(0, min(j, self.num_patches[1] - 1))
-                                bin_x[:, part_idx * sub_desc_dim: (part_idx + 1) * sub_desc_dim, y, x] = avg_pools[k][
-                                                                                                           :, :, temp_i,
-                                                                                                           temp_j]
+                                bin_x[:, part_idx * sub_desc_dim: (part_idx + 1) * sub_desc_dim, y, x] = avg_pools[k][:, :, temp_i, temp_j]
                             part_idx += 1
         bin_x = bin_x.flatten(start_dim=-2, end_dim=-1).permute(0, 2, 1).unsqueeze(dim=1)
         # Bx1x(t-1)x(dxh)
@@ -285,12 +299,12 @@ class ViTExtractor:
         :param bin: apply log binning to the descriptor. default is False.
         :return: tensor of descriptors. Bx1xtxd' where d' is the dimension of the descriptors.
         """
-        assert facet in ['key', 'query', 'value', 'token'], f"""{facet} is not a supported facet for descriptors. 
+        assert facet in ['key', 'query', 'value', 'token'], f"""{facet} is not a supported facet for descriptors.
                                                              choose from ['key' | 'query' | 'value' | 'token'] """
         self._extract_features(batch, [layer], facet)
         x = self._feats[0]
         if facet == 'token':
-            x.unsqueeze_(dim=1) #Bx1xtxd
+            x.unsqueeze_(dim=1)  # Bx1xtxd
         if not include_cls:
             x = x[:, :, 1:, :]  # remove cls token
         else:
@@ -308,17 +322,18 @@ class ViTExtractor:
         :param batch: batch to extract saliency maps for. Has shape BxCxHxW.
         :return: a tensor of saliency maps. has shape Bxt-1
         """
-        assert self.model_type == "dino_vits8", f"saliency maps are supported only for dino_vits model_type."
+        assert self.model_type == "dino_vits8", "saliency maps are supported only for dino_vits model_type."
         self._extract_features(batch, [11], 'attn')
         head_idxs = [0, 2, 4, 5]
-        curr_feats = self._feats[0] #Bxhxtxt
-        cls_attn_map = curr_feats[:, head_idxs, 0, 1:].mean(dim=1) #Bx(t-1)
+        curr_feats = self._feats[0]  # Bxhxtxt
+        cls_attn_map = curr_feats[:, head_idxs, 0, 1:].mean(dim=1)  # Bx(t-1)
         temp_mins, temp_maxs = cls_attn_map.min(dim=1)[0], cls_attn_map.max(dim=1)[0]
         cls_attn_maps = (cls_attn_map - temp_mins) / (temp_maxs - temp_mins)  # normalize to range [0,1]
         return cls_attn_maps
 
-""" taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
-def str2bool(v):
+
+def str2bool(v: str) -> bool:
+    """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -328,18 +343,19 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate ViT Descriptor extraction.')
     parser.add_argument('--image_path', type=str, required=True, help='path of the extracted image.')
     parser.add_argument('--output_path', type=str, required=True, help='path to file containing extracted descriptors.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer.
                                                               small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dino_vits8', type=str,
-                        help="""type of model to extract. 
-                        Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        help="""type of model to extract.
+                        Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 |
                         vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
-    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
+    parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from.
                                                                     options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
